@@ -43,26 +43,35 @@ def init_db():
             last_name TEXT,
             username TEXT,
             user_id TEXT,
-            has_2fa INTEGER DEFAULT 0
+            has_2fa INTEGER DEFAULT 0,
+            logged_in_at TEXT DEFAULT NULL
         )""")
+        # Add column if upgrading from old DB
+        try:
+            c.execute("ALTER TABLE accounts ADD COLUMN logged_in_at TEXT DEFAULT NULL")
+        except Exception:
+            pass
 
 def db_all():
     with sqlite3.connect(DB_PATH) as c:
         rows = c.execute(
-            "SELECT phone,first_name,last_name,username,user_id,has_2fa FROM accounts"
+            "SELECT phone,first_name,last_name,username,user_id,has_2fa,logged_in_at FROM accounts"
         ).fetchall()
     return [
         {"phone": r[0], "firstName": r[1], "lastName": r[2],
-         "username": r[3], "id": r[4], "has2fa": bool(r[5])}
+         "username": r[3], "id": r[4], "has2fa": bool(r[5]),
+         "loggedInAt": r[6]}
         for r in rows
     ]
 
 def db_save(phone, user, has_2fa=False):
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(DB_PATH) as c:
         c.execute(
-            "INSERT OR REPLACE INTO accounts VALUES (?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO accounts VALUES (?,?,?,?,?,?,?)",
             (phone, user.first_name or "", user.last_name,
-             user.username, str(user.id), int(has_2fa))
+             user.username, str(user.id), int(has_2fa), now)
         )
 
 def db_delete(phone):

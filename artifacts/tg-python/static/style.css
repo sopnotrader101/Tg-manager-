@@ -224,6 +224,16 @@ select.input option { background: var(--bg3); }
 .badge-blue   { background: rgba(0,194,255,.12); color: var(--accent); border: 1px solid rgba(0,194,255,.2); }
 .badge-purple { background: rgba(123,97,255,.12); color: var(--accent2); border: 1px solid rgba(123,97,255,.2); }
 .badge-yellow { background: rgba(255,193,7,.12); color: var(--warn); border: 1px solid rgba(255,193,7,.2); }
+.badge-dim    { background: rgba(107,122,141,.1); color: var(--text-mid); border: 1px solid rgba(107,122,141,.2); text-transform: none; letter-spacing: 0; }
+
+.account-serial {
+  position: absolute; bottom: -2px; right: -4px;
+  background: var(--bg); border: 1.5px solid var(--border);
+  color: var(--text-dim); font-size: 9px; font-weight: 700;
+  width: 17px; height: 17px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono);
+}
 
 /* ── Detail header ───────────────────────────────────────────────────────── */
 .detail-header {

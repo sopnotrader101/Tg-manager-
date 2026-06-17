@@ -126,19 +126,24 @@ function renderAccounts(accounts) {
     return;
   }
 
-  container.innerHTML = filtered.map(a => {
+  container.innerHTML = filtered.map((a, idx) => {
     const initials = ((a.firstName||'?')[0] + (a.lastName ? a.lastName[0] : '')).toUpperCase();
+    const loginDuration = formatLoginDuration(a.loggedInAt);
+    const serialNum = accounts.indexOf(a) + 1;
     return `
       <div class="account-card" onclick="navigate('detail','${esc(a.phone)}')">
         <div class="flex items-center gap-3">
-          <div class="account-avatar">${initials}</div>
+          <div style="position:relative;flex-shrink:0">
+            <div class="account-avatar">${initials}</div>
+            <div class="account-serial">${serialNum}</div>
+          </div>
           <div class="account-info">
             <div class="account-name">${esc(a.firstName)} ${esc(a.lastName||'')}</div>
             <div class="account-phone">${esc(a.phone)}</div>
             <div class="account-badges mt-1">
               ${a.username ? `<span class="badge badge-blue">@${esc(a.username)}</span>` : ''}
               ${a.has2fa ? `<span class="badge badge-yellow">2FA ON</span>` : `<span class="badge badge-green">2FA OFF</span>`}
-              <span class="badge badge-green">Active</span>
+              ${loginDuration ? `<span class="badge badge-dim">⏱ ${loginDuration}</span>` : '<span class="badge badge-green">Active</span>'}
             </div>
           </div>
         </div>
@@ -450,6 +455,19 @@ async function joinAllChannels() {
 }
 
 /* ══════════ UTILS ══════════ */
+function formatLoginDuration(loggedInAt) {
+  if (!loggedInAt) return null;
+  const ms = Date.now() - new Date(loggedInAt).getTime();
+  if (ms < 0) return null;
+  const mins  = Math.floor(ms / 60000);
+  const hours = Math.floor(mins / 60);
+  const days  = Math.floor(hours / 24);
+  if (days > 0)  return days + 'd ' + (hours % 24) + 'h';
+  if (hours > 0) return hours + 'h ' + (mins % 60) + 'm';
+  if (mins > 0)  return mins + 'm';
+  return 'just now';
+}
+
 function esc(s) {
   if (s == null) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

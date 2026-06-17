@@ -2,7 +2,8 @@ modules = ["web", "nodejs-20", "python-3.12"]
 
 [deployment]
 router = "application"
-deploymentTarget = "autoscale"
+deploymentTarget = "vm"
+run = ["bash", "-c", "cd artifacts/tg-python && pip install -r requirements.txt -q && PORT=5000 python server.py"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
