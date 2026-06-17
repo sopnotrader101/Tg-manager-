@@ -1,36 +1,32 @@
-# [Project name]
+# TG Manager
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A web-based Telegram account management dashboard. Manage multiple Telegram accounts simultaneously — log in, view active sessions, disable 2FA, change emails, send messages, and join channels.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `cd artifacts/tg-python && PORT=5000 python server.py` — start the FastAPI server (port 5000)
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- **Backend:** Python 3.12, FastAPI, uvicorn, Telethon (MTProto)
+- **Frontend:** Vanilla JS / HTML / CSS (served as static files by FastAPI)
+- **Database:** SQLite (`artifacts/tg-python/accounts.db`) — stores account metadata
+- **Sessions:** Telethon `.session` files stored in `artifacts/tg-python/sessions/`
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/tg-python/server.py` — main FastAPI entry point
+- `artifacts/tg-python/static/` — frontend (index.html, script.js, style.css)
+- `artifacts/tg-python/sessions/` — Telethon session files (one per account)
+- `artifacts/tg-python/accounts.db` — SQLite DB for account metadata
+- `artifacts/tg-python/requirements.txt` — Python dependencies
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
-
-## Product
-
-_Describe the high-level user-facing capabilities of this app once they exist._
+- FastAPI serves both the REST API (`/api/*`) and the static frontend from a single process.
+- Telegram API credentials (`API_ID`, `API_HASH`) are hardcoded in `server.py` — move to env vars for production.
+- SQLite is used for simplicity; no external DB required.
+- Pending login sessions (awaiting code verification) are held in-memory with a 10-minute TTL.
 
 ## User preferences
 
@@ -38,8 +34,5 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- The `sessions/` directory must exist before the server starts (auto-created by `server.py`).
+- Session files persist across restarts; deleting them logs out those accounts on Telegram.
