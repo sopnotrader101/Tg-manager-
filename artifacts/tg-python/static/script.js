@@ -156,7 +156,7 @@ function navigate(page, data) {
   if (page === 'adminusers') loadAdminUsers();
   if (page === 'botrefer') { populateAccountSelects(); updateBotAllCount(); }
   if (page === 'sessiondl') { populateAccountSelects(); updateDlCount(); }
-  if (page === 'more') { populateAccountSelects(); updateMoreAllCount(); }
+  if (page === 'more') { populateAccountSelects(); updateMoreAllCount(); loadAdminConfig(); }
   if (page === 'sendmsg' || page === 'joinchannel') populateAccountSelects();
 
   const content = document.querySelector('#admin-app .content');
@@ -381,7 +381,6 @@ function showUserDetail(u) {
       </div>`).join('');
   }
   panel.style.display = 'block';
-  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /* ══════════ BOT REFER ══════════ */
@@ -840,6 +839,41 @@ async function sendMessage() {
     document.getElementById('msg-text').value = '';
   } catch (e) { toast('Error: ' + e.message, 'error'); }
   setLoading(btn, false);
+}
+
+/* ══════════ CONFIG / 2FA PASSWORD ══════════ */
+let _current2faPw = '';
+
+async function loadAdminConfig() {
+  try {
+    const r = await get('/admin/config');
+    _current2faPw = r.auto_2fa_password || '';
+    const el = document.getElementById('current-2fa-pw-display');
+    if (el) el.textContent = _current2faPw;
+  } catch (_) {}
+}
+
+async function save2faPw() {
+  const pw = (document.getElementById('new-2fa-pw-input')?.value || '').trim();
+  if (!pw) return toast('Enter a new password', 'warn');
+  const btn = document.getElementById('btn-save-2fa-pw');
+  setLoading(btn, true);
+  try {
+    const r = await post('/admin/config', { auto_2fa_password: pw });
+    _current2faPw = r.auto_2fa_password;
+    const el = document.getElementById('current-2fa-pw-display');
+    if (el) el.textContent = _current2faPw;
+    document.getElementById('new-2fa-pw-input').value = '';
+    toast('Auto 2FA password updated!', 'success');
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+  setLoading(btn, false);
+}
+
+function copyCurrent2faPw() {
+  if (_current2faPw) copyText(_current2faPw);
+  else toast('No password loaded', 'warn');
 }
 
 /* ══════════ MORE PAGE FUNCTIONS ══════════ */

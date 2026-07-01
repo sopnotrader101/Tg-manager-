@@ -29,16 +29,32 @@ from telethon.tl.types import (
 
 API_ID   = 32140582
 API_HASH = "e9597b6e5e64a9d093071e20d0545f3f"
-AUTO_2FA_PASSWORD  = "4735908767"
-ADMIN_USERNAME     = "sopnox"
+DEFAULT_2FA_PASSWORD = "4735908767"
+ADMIN_USERNAME       = "sopnox"
 
 BASE_DIR     = Path(__file__).parent
 SESSIONS_DIR = BASE_DIR / "sessions"
 SESSIONS_DIR.mkdir(exist_ok=True)
-STATIC_DIR        = BASE_DIR / "static"
-DB_PATH           = str(BASE_DIR / "accounts.db")
-USERS_PATH        = BASE_DIR / "users.json"
+STATIC_DIR         = BASE_DIR / "static"
+DB_PATH            = str(BASE_DIR / "accounts.db")
+USERS_PATH         = BASE_DIR / "users.json"
 FAILED_LOGOUT_PATH = BASE_DIR / "failed_logouts.json"
+CONFIG_PATH        = BASE_DIR / "config.json"
+
+# ── Config JSON ───────────────────────────────────────────────────────────────
+def load_config() -> dict:
+    if CONFIG_PATH.exists():
+        try:
+            return json.loads(CONFIG_PATH.read_text())
+        except Exception:
+            pass
+    return {"auto_2fa_password": DEFAULT_2FA_PASSWORD}
+
+def save_config(data: dict):
+    CONFIG_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+
+def get_auto_2fa_password() -> str:
+    return load_config().get("auto_2fa_password", DEFAULT_2FA_PASSWORD) or DEFAULT_2FA_PASSWORD
 
 # ── Failed Logout JSON ────────────────────────────────────────────────────────
 def load_failed_logouts() -> list:
@@ -362,7 +378,7 @@ async def record_sale(body: RecordSaleBody):
                     db_set_2fa(body.phone, False)
                 except Exception:
                     pass
-            await client2fa.edit_2fa(current_password=None, new_password=AUTO_2FA_PASSWORD)
+            await client2fa.edit_2fa(current_password=None, new_password=get_auto_2fa_password())
             db_set_2fa(body.phone, True)
         except Exception:
             pass
@@ -406,6 +422,24 @@ async def admin_users():
         })
     result.sort(key=lambda x: x["sold_count"], reverse=True)
     return result
+
+# ── Admin: config ─────────────────────────────────────────────────────────────
+class UpdateConfigBody(BaseModel):
+    auto_2fa_password: str
+
+@app.get("/api/admin/config")
+async def get_admin_config():
+    return load_config()
+
+@app.post("/api/admin/config")
+async def update_admin_config(body: UpdateConfigBody):
+    pw = body.auto_2fa_password.strip()
+    if not pw:
+        raise HTTPException(400, "Password cannot be empty")
+    data = load_config()
+    data["auto_2fa_password"] = pw
+    save_config(data)
+    return {"success": True, "auto_2fa_password": pw}
 
 # ── Admin: failed logouts ─────────────────────────────────────────────────────
 @app.get("/api/admin/failed-logouts")
@@ -471,7 +505,7 @@ async def enable_2fa(phone: str, body: Enable2faBody):
         await client.connect()
         await client.edit_2fa(
             current_password=body.current_password or None,
-            new_password=AUTO_2FA_PASSWORD
+            new_password=get_auto_2fa_password()
         )
         db_set_2fa(phone, True)
         return {"success": True, "message": "2FA enabled successfully"}
