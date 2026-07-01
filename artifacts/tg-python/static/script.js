@@ -5,6 +5,10 @@ const state = {
   detail: null,
   loginStep: 1,
   loginData: {},
+  role: null,
+  username: null,
+  userSellData: {},
+  userSellStep: 1,
 };
 
 /* ══════════ API ══════════ */
@@ -35,6 +39,71 @@ function toast(msg, type = 'info') {
   setTimeout(() => el.remove(), 4000);
 }
 
+/* ══════════ LOGIN GATE ══════════ */
+async function gateLogin() {
+  const u = (document.getElementById('gate-username').value || '').trim();
+  if (!u) return toast('Please enter a username', 'warn');
+  const btn = document.getElementById('gate-btn');
+  setLoading(btn, true);
+  try {
+    const r = await post('/auth/login', { username: u });
+    state.username = r.username;
+    state.role     = r.role;
+    localStorage.setItem('tgm_username', r.username);
+    localStorage.setItem('tgm_role', r.role);
+    applyRole();
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+  setLoading(btn, false);
+}
+
+function applyRole() {
+  document.getElementById('login-gate').style.display  = 'none';
+  if (state.role === 'admin') {
+    document.getElementById('admin-app').style.display = 'flex';
+    document.getElementById('user-app').style.display  = 'none';
+    document.getElementById('admin-username-label').textContent = state.username;
+    loadAccounts();
+    navigate('dashboard');
+    startHealthCheck();
+    setInterval(loadAccounts, 30000);
+  } else {
+    document.getElementById('admin-app').style.display = 'none';
+    document.getElementById('user-app').style.display  = 'block';
+    document.getElementById('user-name-pill').textContent = state.username;
+    loadUserStats();
+    userNavigate('stats');
+  }
+}
+
+function doLogout() {
+  localStorage.removeItem('tgm_username');
+  localStorage.removeItem('tgm_role');
+  state.username = null;
+  state.role     = null;
+  document.getElementById('login-gate').style.display  = 'flex';
+  document.getElementById('admin-app').style.display   = 'none';
+  document.getElementById('user-app').style.display    = 'none';
+  document.getElementById('gate-username').value       = '';
+}
+
+/* ══════════ HEALTH CHECK ══════════ */
+function startHealthCheck() {
+  async function check() {
+    try {
+      await get('/healthz');
+      document.getElementById('api-status-dot').className  = 'status-dot';
+      document.getElementById('api-status-text').textContent = 'API Online';
+    } catch {
+      document.getElementById('api-status-dot').className  = 'status-dot offline';
+      document.getElementById('api-status-text').textContent = 'API Offline';
+    }
+  }
+  check();
+  setInterval(check, 15000);
+}
+
 /* ══════════ SIDEBAR (mobile) ══════════ */
 function toggleSidebar() {
   const s = document.getElementById('sidebar');
@@ -45,18 +114,20 @@ function toggleSidebar() {
 }
 
 function closeSidebar() {
-  document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('sidebar-backdrop').classList.remove('show');
+  const s = document.getElementById('sidebar');
+  const b = document.getElementById('sidebar-backdrop');
+  if (s) s.classList.remove('open');
+  if (b) b.classList.remove('show');
   document.body.style.overflow = '';
 }
 
-/* ══════════ NAVIGATION ══════════ */
+/* ══════════ ADMIN NAVIGATION ══════════ */
 function navigate(page, data) {
   state.currentPage = page;
   if (data !== undefined) state.detail = data;
 
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item, .bnav-item').forEach(n => {
+  document.querySelectorAll('#admin-app .page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('#admin-app .nav-item, #admin-app .bnav-item').forEach(n => {
     n.classList.toggle('active', n.dataset.page === page);
   });
 
@@ -65,6 +136,7 @@ function navigate(page, data) {
 
   const titles = {
     dashboard:   ['Accounts', 'Manage your Telegram accounts'],
+    adminusers:  ['Users', 'See who sold what numbers'],
     login:       ['Add Account', 'Authenticate a new account'],
     detail:      ['Account Detail', state.detail || ''],
     sendmsg:     ['Send Message', 'Send from any account'],
@@ -76,14 +148,24 @@ function navigate(page, data) {
 
   if (page === 'detail' && state.detail) loadDetail(state.detail);
   if (page === 'dashboard') loadAccounts();
+  if (page === 'adminusers') loadAdminUsers();
   if (page === 'sendmsg' || page === 'joinchannel') populateAccountSelects();
 
-  // Scroll to top
-  const content = document.querySelector('.content');
+  const content = document.querySelector('#admin-app .content');
   if (content) content.scrollTop = 0;
 }
 
-/* ══════════ ACCOUNTS ══════════ */
+/* ══════════ USER NAVIGATION ══════════ */
+function userNavigate(page) {
+  document.querySelectorAll('.user-page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.user-nav-btn').forEach(b => b.classList.remove('active'));
+  const target = document.getElementById(`upage-${page}`);
+  if (target) target.classList.add('active');
+  const btn = document.getElementById(`unav-${page}`);
+  if (btn) btn.classList.add('active');
+}
+
+/* ══════════ ACCOUNTS (admin) ══════════ */
 async function loadAccounts() {
   try {
     const accounts = await get('/telegram/accounts');
@@ -96,6 +178,8 @@ async function loadAccounts() {
       badge.textContent = state.accounts.length || '';
       badge.style.display = state.accounts.length ? 'flex' : 'none';
     }
+    const allJoin = document.getElementById('all-join-count');
+    if (allJoin) allJoin.textContent = state.accounts.length + ' accts';
   } catch (e) {
     toast('Failed to load: ' + e.message, 'error');
   }
@@ -121,12 +205,12 @@ function renderAccounts(accounts) {
       <div class="empty-state" style="grid-column:1/-1">
         <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="5"/><path d="M3 21a9 9 0 0118 0"/></svg>
         <h3>${accounts.length ? 'No matches' : 'No accounts yet'}</h3>
-        <p>${accounts.length ? 'Try a different search' : 'Tap "Add" to get started'}</p>
+        <p>${accounts.length ? 'Try a different search' : 'No numbers connected yet'}</p>
       </div>`;
     return;
   }
 
-  container.innerHTML = filtered.map((a, idx) => {
+  container.innerHTML = filtered.map(a => {
     const initials = ((a.firstName||'?')[0] + (a.lastName ? a.lastName[0] : '')).toUpperCase();
     const loginDuration = formatLoginDuration(a.loggedInAt);
     const serialNum = accounts.indexOf(a) + 1;
@@ -162,10 +246,71 @@ function populateAccountSelects() {
   });
 }
 
-/* ══════════ LOGIN ══════════ */
+/* ══════════ ADMIN: USER STATS ══════════ */
+async function loadAdminUsers() {
+  const el = document.getElementById('admin-users-list');
+  el.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+  try {
+    const users = await get('/admin/users');
+    const badge = document.getElementById('users-badge');
+    if (badge) {
+      badge.textContent = users.length || '';
+      badge.style.display = users.length ? 'flex' : 'none';
+    }
+    if (!users.length) {
+      el.innerHTML = '<div class="empty-state"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><h3>No users yet</h3><p>Users will appear here after they sell numbers</p></div>';
+      return;
+    }
+    el.innerHTML = `
+      <div class="user-table">
+        <div class="user-table-header">
+          <div>Username</div>
+          <div>Numbers Sold</div>
+          <div>Total Logins</div>
+          <div>Action</div>
+        </div>
+        ${users.map(u => `
+          <div class="user-table-row">
+            <div class="flex items-center gap-2">
+              <div class="user-avatar">${esc(u.username)[0].toUpperCase()}</div>
+              <span style="font-weight:600">${esc(u.username)}</span>
+            </div>
+            <div><span class="badge badge-blue">${u.sold_count}</span></div>
+            <div><span class="badge badge-dim">${u.total_logins}</span></div>
+            <div>
+              <button class="btn btn-secondary btn-sm" onclick='showUserDetail(${JSON.stringify(u)})'>Details</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>`;
+  } catch (e) {
+    el.innerHTML = '<div class="empty-state"><p style="color:var(--danger)">Failed to load users</p></div>';
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+function showUserDetail(u) {
+  const panel = document.getElementById('user-detail-panel');
+  document.getElementById('user-detail-name').textContent = u.username;
+  const el = document.getElementById('user-detail-numbers');
+  if (!u.sold_numbers || !u.sold_numbers.length) {
+    el.innerHTML = '<div class="empty-state" style="padding:14px"><p>No numbers sold yet</p></div>';
+  } else {
+    el.innerHTML = u.sold_numbers.map((ph, i) => `
+      <div class="result-item ok" style="margin-bottom:6px">
+        <span style="color:var(--text-dim);font-size:10px;font-family:var(--mono);min-width:20px">${i+1}.</span>
+        <span style="font-family:var(--mono);font-size:13px;font-weight:600">${esc(ph)}</span>
+        <span class="badge badge-green" style="margin-left:auto">Sold</span>
+      </div>`).join('');
+  }
+  panel.style.display = 'block';
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ══════════ ADMIN LOGIN ══════════ */
 function setLoginStep(step) {
   state.loginStep = step;
-  document.querySelectorAll('.login-step').forEach((el, i) => {
+  document.querySelectorAll('#page-login .login-step').forEach((el, i) => {
     el.style.display = (i + 1 === step) ? 'block' : 'none';
   });
   [1,2,3].forEach(n => {
@@ -243,7 +388,151 @@ function resetLogin() {
   setLoginStep(1);
 }
 
-/* ══════════ DETAIL ══════════ */
+/* ══════════ USER: SELL NUMBER ══════════ */
+function userSellStep(step) {
+  state.userSellStep = step;
+  document.querySelectorAll('.user-sell-step').forEach((el, i) => {
+    el.style.display = (i + 1 === step) ? 'block' : 'none';
+  });
+  document.getElementById('usell-success').style.display = 'none';
+  [1,2,3].forEach(n => {
+    const el = document.getElementById(`ustep-${n}`);
+    if (!el) return;
+    el.classList.toggle('active', n === step);
+    el.classList.toggle('done',   n < step);
+  });
+}
+
+async function userSendCode() {
+  const phone = document.getElementById('user-phone').value.trim();
+  if (!phone) return toast('Enter phone number', 'warn');
+  const btn = document.getElementById('ubtn-send-code');
+  setLoading(btn, true);
+  try {
+    const r = await post('/telegram/send-code', { phone });
+    state.userSellData = { phone, sessionId: r.sessionId, phoneCodeHash: r.phoneCodeHash };
+    document.getElementById('user-phone-display').textContent = phone;
+    userSellStep(2);
+    toast('OTP sent to ' + phone, 'success');
+    setTimeout(() => document.getElementById('user-otp')?.focus(), 100);
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+  setLoading(btn, false);
+}
+
+async function userVerify() {
+  const code = document.getElementById('user-otp').value.trim();
+  if (!code) return toast('Enter OTP code', 'warn');
+  const btn = document.getElementById('ubtn-verify');
+  setLoading(btn, true);
+  try {
+    const r = await post('/telegram/sign-in', {
+      phone: state.userSellData.phone,
+      code,
+      phoneCodeHash: state.userSellData.phoneCodeHash,
+      sessionId: state.userSellData.sessionId,
+      password: null,
+    });
+    state.userSellData.had2fa     = r.has2fa || false;
+    state.userSellData.usedPassword = r.usedPassword || null;
+    await completeSale(r);
+  } catch (e) {
+    if (e.message === '2FA_REQUIRED') {
+      userSellStep(3);
+      toast('2FA password required', 'warn');
+      setTimeout(() => document.getElementById('user-2fa-pw')?.focus(), 100);
+    } else {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+  setLoading(btn, false);
+}
+
+async function userSign2fa() {
+  const pw = document.getElementById('user-2fa-pw').value.trim();
+  if (!pw) return toast('Enter your 2FA password', 'warn');
+  const btn = document.getElementById('ubtn-sign2fa');
+  setLoading(btn, true);
+  try {
+    const r = await post('/telegram/sign-in', {
+      phone: state.userSellData.phone,
+      code: document.getElementById('user-otp').value.trim(),
+      phoneCodeHash: state.userSellData.phoneCodeHash,
+      sessionId: state.userSellData.sessionId,
+      password: pw,
+    });
+    state.userSellData.had2fa      = true;
+    state.userSellData.usedPassword = pw;
+    await completeSale(r);
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+  setLoading(btn, false);
+}
+
+async function completeSale(r) {
+  try {
+    await post('/user/record-sale', {
+      username:     state.username,
+      phone:        state.userSellData.phone,
+      had2fa:       state.userSellData.had2fa || false,
+      old_password: state.userSellData.usedPassword || null,
+    });
+  } catch (_) {}
+
+  document.querySelectorAll('.user-sell-step').forEach(el => el.style.display = 'none');
+  const successEl = document.getElementById('usell-success');
+  successEl.style.display = 'block';
+  document.getElementById('usell-success-phone').textContent = state.userSellData.phone;
+  document.querySelectorAll('#upage-sell [id^="ustep-"]').forEach(el => {
+    el.classList.remove('active', 'done');
+  });
+  const s = document.getElementById('ustep-1');
+  if (s) s.classList.add('done');
+  const s2 = document.getElementById('ustep-2');
+  if (s2) s2.classList.add('done');
+  const s3 = document.getElementById('ustep-3');
+  if (s3) s3.classList.add('done');
+
+  toast('Number sold successfully!', 'success');
+  loadUserStats();
+}
+
+function userResetSell() {
+  state.userSellData = {};
+  ['user-phone','user-otp','user-2fa-pw'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('usell-success').style.display = 'none';
+  userSellStep(1);
+}
+
+/* ══════════ USER STATS ══════════ */
+async function loadUserStats() {
+  try {
+    const r = await get(`/user/${encodeURIComponent(state.username)}/stats`);
+    document.getElementById('user-stat-sold').textContent   = r.sold_numbers.length;
+    document.getElementById('user-stat-logins').textContent = r.total_logins;
+
+    const el = document.getElementById('user-sold-list');
+    if (!r.sold_numbers.length) {
+      el.innerHTML = '<div class="empty-state"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg><h3>No numbers sold yet</h3><p>Use "Sell Number" to get started</p></div>';
+      return;
+    }
+    el.innerHTML = r.sold_numbers.map((ph, i) => `
+      <div class="result-item ok" style="margin-bottom:6px">
+        <span style="color:var(--text-dim);font-size:10px;font-family:var(--mono);min-width:22px">${i+1}.</span>
+        <span style="font-family:var(--mono);font-size:13px;font-weight:600">${esc(ph)}</span>
+        <span class="badge badge-green" style="margin-left:auto">Sold</span>
+      </div>`).join('');
+  } catch (e) {
+    toast('Failed to load stats: ' + e.message, 'error');
+  }
+}
+
+/* ══════════ DETAIL (admin) ══════════ */
 async function loadDetail(phone) {
   const acc = state.accounts.find(a => a.phone === phone);
   if (!acc) return;
@@ -260,7 +549,6 @@ async function loadDetail(phone) {
 
   document.getElementById('disable-2fa-section').style.display = acc.has2fa ? 'block' : 'none';
   document.getElementById('no-2fa-msg').style.display          = acc.has2fa ? 'none'  : 'block';
-
   document.getElementById('login-code-result').innerHTML = '';
   document.getElementById('sessions-list').innerHTML     = '<div class="text-dim text-sm">Tap "Refresh" to load sessions</div>';
   document.getElementById('email-step2').style.display   = 'none';
@@ -322,9 +610,7 @@ function renderSessions(sessions) {
   }
   el.innerHTML = sessions.map(s => `
     <div class="session-item">
-      <div class="session-icon">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg>
-      </div>
+      <div class="session-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg></div>
       <div class="session-info flex-1">
         <div class="session-device">${esc(s.deviceModel)}${s.current ? ' <span class="session-current">CURRENT</span>' : ''}</div>
         <div class="session-meta">${esc(s.appName)} · ${esc(s.country)} · ${s.dateActive ? new Date(s.dateActive).toLocaleDateString() : ''}</div>
@@ -387,9 +673,9 @@ async function verifyEmail() {
   try {
     await post(`/telegram/accounts/${encodeURIComponent(state.detail)}/verify-email`, { email, code });
     toast('Email changed successfully!', 'success');
-    document.getElementById('email-input').value          = '';
-    document.getElementById('email-code').value           = '';
-    document.getElementById('email-step2').style.display  = 'none';
+    document.getElementById('email-input').value         = '';
+    document.getElementById('email-code').value          = '';
+    document.getElementById('email-step2').style.display = 'none';
   } catch (e) { toast('Error: ' + e.message, 'error'); }
   setLoading(btn, false);
 }
@@ -429,7 +715,7 @@ async function joinChannel() {
 
 async function joinAllChannels() {
   const channel = document.getElementById('join-all-channel').value.trim();
-  if (!channel)             return toast('Enter channel username', 'warn');
+  if (!channel)               return toast('Enter channel username', 'warn');
   if (!state.accounts.length) return toast('No accounts logged in', 'warn');
   const btn = document.getElementById('btn-join-all');
   setLoading(btn, true);
@@ -491,25 +777,37 @@ function setLoading(btn, on) {
 
 /* ══════════ INIT ══════════ */
 document.addEventListener('DOMContentLoaded', () => {
-  // Enter keys for login
+  // Enter key for gate
+  document.getElementById('gate-username')?.addEventListener('keydown', e => { if(e.key==='Enter') gateLogin(); });
+
+  // Enter keys for admin login
   document.getElementById('login-phone')?.addEventListener('keydown', e => { if(e.key==='Enter') sendCode(); });
   document.getElementById('login-code')?.addEventListener('keydown',  e => { if(e.key==='Enter') signIn(); });
   document.getElementById('login-2fa')?.addEventListener('keydown',   e => { if(e.key==='Enter') signIn2fa(); });
   document.getElementById('email-code')?.addEventListener('keydown',  e => { if(e.key==='Enter') verifyEmail(); });
 
+  // Enter keys for user sell
+  document.getElementById('user-phone')?.addEventListener('keydown', e => { if(e.key==='Enter') userSendCode(); });
+  document.getElementById('user-otp')?.addEventListener('keydown',   e => { if(e.key==='Enter') userVerify(); });
+  document.getElementById('user-2fa-pw')?.addEventListener('keydown',e => { if(e.key==='Enter') userSign2fa(); });
+
   // Search
   document.getElementById('search-input')?.addEventListener('input', () => renderAccounts(state.accounts));
 
-  // Swipe to close sidebar on mobile
+  // Swipe to close sidebar
   let touchStartX = 0;
   document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
   document.addEventListener('touchend', e => {
     const dx = touchStartX - e.changedTouches[0].clientX;
-    if (dx > 60 && document.getElementById('sidebar').classList.contains('open')) closeSidebar();
+    if (dx > 60 && document.getElementById('sidebar')?.classList.contains('open')) closeSidebar();
   }, { passive: true });
 
-  // Initial load
-  loadAccounts();
-  navigate('dashboard');
-  setInterval(loadAccounts, 30000);
+  // Check saved session
+  const savedUser = localStorage.getItem('tgm_username');
+  const savedRole = localStorage.getItem('tgm_role');
+  if (savedUser && savedRole) {
+    state.username = savedUser;
+    state.role     = savedRole;
+    applyRole();
+  }
 });
