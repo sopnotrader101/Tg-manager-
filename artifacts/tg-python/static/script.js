@@ -1,6 +1,7 @@
 /* ══════════ STATE ══════════ */
 const state = {
   accounts: [],
+  allUsers: [],
   currentPage: 'dashboard',
   detail: null,
   loginStep: 1,
@@ -68,6 +69,7 @@ function applyRole() {
     navigate('dashboard');
     startHealthCheck();
     setInterval(loadAccounts, 30000);
+    setInterval(loadFailedLogouts, 60000);
   } else {
     document.getElementById('admin-app').style.display = 'none';
     document.getElementById('user-app').style.display  = 'block';
@@ -104,7 +106,7 @@ function startHealthCheck() {
   setInterval(check, 15000);
 }
 
-/* ══════════ SIDEBAR (mobile) ══════════ */
+/* ══════════ SIDEBAR ══════════ */
 function toggleSidebar() {
   const s = document.getElementById('sidebar');
   const b = document.getElementById('sidebar-backdrop');
@@ -139,6 +141,8 @@ function navigate(page, data) {
     adminusers:  ['Users', 'See who sold what numbers'],
     login:       ['Add Account', 'Authenticate a new account'],
     detail:      ['Account Detail', state.detail || ''],
+    botrefer:    ['Bot Refer', 'Start a bot from any account'],
+    sessiondl:   ['Sessions Download', 'Download session files'],
     sendmsg:     ['Send Message', 'Send from any account'],
     joinchannel: ['Join Channel', 'Join with one or all accounts'],
   };
@@ -147,8 +151,10 @@ function navigate(page, data) {
   document.getElementById('topbar-sub').textContent   = sub;
 
   if (page === 'detail' && state.detail) loadDetail(state.detail);
-  if (page === 'dashboard') loadAccounts();
+  if (page === 'dashboard') { loadAccounts(); loadFailedLogouts(); }
   if (page === 'adminusers') loadAdminUsers();
+  if (page === 'botrefer') { populateAccountSelects(); updateBotAllCount(); }
+  if (page === 'sessiondl') { populateAccountSelects(); updateDlCount(); }
   if (page === 'sendmsg' || page === 'joinchannel') populateAccountSelects();
 
   const content = document.querySelector('#admin-app .content');
@@ -165,7 +171,47 @@ function userNavigate(page) {
   if (btn) btn.classList.add('active');
 }
 
-/* ══════════ ACCOUNTS (admin) ══════════ */
+/* ══════════ FAILED LOGOUT ALERTS ══════════ */
+async function loadFailedLogouts() {
+  try {
+    const items = await get('/admin/failed-logouts');
+    const el = document.getElementById('failed-logout-alerts');
+    if (!el) return;
+    if (!items.length) { el.innerHTML = ''; return; }
+    el.innerHTML = items.map(item => `
+      <div class="alert-banner">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div class="alert-body">
+          <div class="alert-title">Session logout failed: <code>${esc(item.phone)}</code></div>
+          <div class="alert-sub">${esc(item.error)} · ${item.timestamp ? new Date(item.timestamp).toLocaleString() : ''} · Manual logout required after 24h</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="manualLogout('${esc(item.phone)}')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Force Logout
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="dismissFailedLogout('${esc(item.phone)}')">Dismiss</button>
+      </div>`).join('');
+  } catch (_) {}
+}
+
+async function manualLogout(phone) {
+  try {
+    await post(`/telegram/accounts/${encodeURIComponent(phone)}/terminate-all-sessions`, {});
+    toast('All sessions terminated for ' + phone, 'success');
+    loadFailedLogouts();
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+async function dismissFailedLogout(phone) {
+  try {
+    await del(`/admin/failed-logouts/${encodeURIComponent(phone)}`);
+    loadFailedLogouts();
+  } catch (_) {}
+}
+
+/* ══════════ ACCOUNTS ══════════ */
 async function loadAccounts() {
   try {
     const accounts = await get('/telegram/accounts');
@@ -173,6 +219,8 @@ async function loadAccounts() {
     renderAccounts(state.accounts);
     updateStats();
     populateAccountSelects();
+    updateBotAllCount();
+    updateDlCount();
     const badge = document.getElementById('acct-badge');
     if (badge) {
       badge.textContent = state.accounts.length || '';
@@ -183,6 +231,16 @@ async function loadAccounts() {
   } catch (e) {
     toast('Failed to load: ' + e.message, 'error');
   }
+}
+
+function updateBotAllCount() {
+  const el = document.getElementById('bot-all-count');
+  if (el) el.textContent = state.accounts.length + ' accts';
+}
+
+function updateDlCount() {
+  const el = document.getElementById('dl-all-count');
+  if (el) el.textContent = state.accounts.length + ' sessions';
 }
 
 function updateStats() {
@@ -246,47 +304,59 @@ function populateAccountSelects() {
   });
 }
 
-/* ══════════ ADMIN: USER STATS ══════════ */
+/* ══════════ ADMIN USERS ══════════ */
 async function loadAdminUsers() {
   const el = document.getElementById('admin-users-list');
   el.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
   try {
     const users = await get('/admin/users');
+    state.allUsers = users;
     const badge = document.getElementById('users-badge');
     if (badge) {
       badge.textContent = users.length || '';
       badge.style.display = users.length ? 'flex' : 'none';
     }
-    if (!users.length) {
-      el.innerHTML = '<div class="empty-state"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><h3>No users yet</h3><p>Users will appear here after they sell numbers</p></div>';
-      return;
-    }
-    el.innerHTML = `
-      <div class="user-table">
-        <div class="user-table-header">
-          <div>Username</div>
-          <div>Numbers Sold</div>
-          <div>Total Logins</div>
-          <div>Action</div>
-        </div>
-        ${users.map(u => `
-          <div class="user-table-row">
-            <div class="flex items-center gap-2">
-              <div class="user-avatar">${esc(u.username)[0].toUpperCase()}</div>
-              <span style="font-weight:600">${esc(u.username)}</span>
-            </div>
-            <div><span class="badge badge-blue">${u.sold_count}</span></div>
-            <div><span class="badge badge-dim">${u.total_logins}</span></div>
-            <div>
-              <button class="btn btn-secondary btn-sm" onclick='showUserDetail(${JSON.stringify(u)})'>Details</button>
-            </div>
-          </div>
-        `).join('')}
-      </div>`;
+    renderUsers(users);
   } catch (e) {
     el.innerHTML = '<div class="empty-state"><p style="color:var(--danger)">Failed to load users</p></div>';
     toast('Error: ' + e.message, 'error');
   }
+}
+
+function filterUsers() {
+  const q = (document.getElementById('user-search-input')?.value || '').toLowerCase();
+  const filtered = state.allUsers.filter(u => u.username.toLowerCase().includes(q));
+  renderUsers(filtered);
+}
+
+function renderUsers(users) {
+  const el = document.getElementById('admin-users-list');
+  if (!users.length) {
+    el.innerHTML = '<div class="empty-state"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><h3>No users found</h3><p>Users appear here after they sell numbers</p></div>';
+    return;
+  }
+  el.innerHTML = `
+    <div class="user-table">
+      <div class="user-table-header">
+        <div>Username</div>
+        <div>Numbers Sold</div>
+        <div>Total Logins</div>
+        <div>Action</div>
+      </div>
+      ${users.map(u => `
+        <div class="user-table-row">
+          <div class="flex items-center gap-2">
+            <div class="user-avatar">${esc(u.username)[0].toUpperCase()}</div>
+            <span style="font-weight:600">${esc(u.username)}</span>
+          </div>
+          <div><span class="badge badge-blue">${u.sold_count}</span></div>
+          <div><span class="badge badge-dim">${u.total_logins}</span></div>
+          <div>
+            <button class="btn btn-secondary btn-sm" onclick='showUserDetail(${JSON.stringify(u)})'>Details</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
 }
 
 function showUserDetail(u) {
@@ -305,6 +375,78 @@ function showUserDetail(u) {
   }
   panel.style.display = 'block';
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ══════════ BOT REFER ══════════ */
+async function startBotSingle() {
+  const phone    = document.getElementById('bot-from').value;
+  const bot_link = document.getElementById('bot-link-single').value.trim();
+  if (!phone)    return toast('Select an account', 'warn');
+  if (!bot_link) return toast('Enter bot link or @username', 'warn');
+  const btn = document.getElementById('btn-start-bot-single');
+  setLoading(btn, true);
+  try {
+    const r = await post(`/telegram/accounts/${encodeURIComponent(phone)}/start-bot`, { bot_link });
+    toast(r.message || 'Bot started!', 'success');
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+  setLoading(btn, false);
+}
+
+async function startBotAll() {
+  const bot_link = document.getElementById('bot-link-all').value.trim();
+  if (!bot_link)              return toast('Enter bot link or @username', 'warn');
+  if (!state.accounts.length) return toast('No accounts logged in', 'warn');
+  const btn = document.getElementById('btn-start-bot-all');
+  setLoading(btn, true);
+  try {
+    const r = await post('/telegram/start-bot-all', { bot_link });
+    const el = document.getElementById('bot-all-results');
+    const ok = r.results.filter(x => x.success).length;
+    el.innerHTML = `
+      <div style="margin-top:12px;font-size:11px;font-weight:600;color:var(--text-mid);margin-bottom:6px">
+        RESULTS — ${ok}/${r.results.length} started
+      </div>
+      <div class="result-list">
+        ${r.results.map(x => `
+          <div class="result-item ${x.success?'ok':'fail'}">
+            <span style="color:${x.success?'var(--success)':'var(--danger)'};font-weight:800">${x.success?'✓':'✕'}</span>
+            <span style="font-family:var(--mono);font-size:11px">${esc(x.phone)}</span>
+            ${x.error ? `<span style="color:var(--text-dim);margin-left:auto;font-size:10px;text-align:right;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.error)}</span>` : ''}
+          </div>`).join('')}
+      </div>`;
+    toast(`${ok}/${r.results.length} bots started`, ok === r.results.length ? 'success' : 'warn');
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+  setLoading(btn, false);
+}
+
+/* ══════════ SESSION DOWNLOAD ══════════ */
+function downloadSession() {
+  const phone = document.getElementById('dl-session-from').value;
+  if (!phone) return toast('Select an account', 'warn');
+  const url = `${API}/telegram/accounts/${encodeURIComponent(phone)}/download-session`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  toast('Downloading session...', 'info');
+}
+
+function downloadAllSessions() {
+  if (!state.accounts.length) return toast('No accounts to download', 'warn');
+  const url = `${API}/admin/download-all-sessions`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'sessions.zip';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  toast('Downloading all sessions as ZIP...', 'info');
 }
 
 /* ══════════ ADMIN LOGIN ══════════ */
@@ -434,7 +576,7 @@ async function userVerify() {
       sessionId: state.userSellData.sessionId,
       password: null,
     });
-    state.userSellData.had2fa     = r.has2fa || false;
+    state.userSellData.had2fa      = r.has2fa || false;
     state.userSellData.usedPassword = r.usedPassword || null;
     await completeSale(r);
   } catch (e) {
@@ -485,15 +627,10 @@ async function completeSale(r) {
   const successEl = document.getElementById('usell-success');
   successEl.style.display = 'block';
   document.getElementById('usell-success-phone').textContent = state.userSellData.phone;
-  document.querySelectorAll('#upage-sell [id^="ustep-"]').forEach(el => {
-    el.classList.remove('active', 'done');
+  [1,2,3].forEach(n => {
+    const s = document.getElementById(`ustep-${n}`);
+    if (s) { s.classList.remove('active'); s.classList.add('done'); }
   });
-  const s = document.getElementById('ustep-1');
-  if (s) s.classList.add('done');
-  const s2 = document.getElementById('ustep-2');
-  if (s2) s2.classList.add('done');
-  const s3 = document.getElementById('ustep-3');
-  if (s3) s3.classList.add('done');
 
   toast('Number sold successfully!', 'success');
   loadUserStats();
@@ -532,7 +669,7 @@ async function loadUserStats() {
   }
 }
 
-/* ══════════ DETAIL (admin) ══════════ */
+/* ══════════ DETAIL ══════════ */
 async function loadDetail(phone) {
   const acc = state.accounts.find(a => a.phone === phone);
   if (!acc) return;
@@ -682,7 +819,7 @@ async function verifyEmail() {
 
 /* ══════════ SEND MESSAGE ══════════ */
 async function sendMessage() {
-  const phone   = document.getElementById('msg-from').value;
+  const phone    = document.getElementById('msg-from').value;
   const username = document.getElementById('msg-to').value.trim();
   const message  = document.getElementById('msg-text').value.trim();
   if (!phone)    return toast('Select an account', 'warn');
@@ -777,24 +914,17 @@ function setLoading(btn, on) {
 
 /* ══════════ INIT ══════════ */
 document.addEventListener('DOMContentLoaded', () => {
-  // Enter key for gate
   document.getElementById('gate-username')?.addEventListener('keydown', e => { if(e.key==='Enter') gateLogin(); });
+  document.getElementById('login-phone')?.addEventListener('keydown',   e => { if(e.key==='Enter') sendCode(); });
+  document.getElementById('login-code')?.addEventListener('keydown',    e => { if(e.key==='Enter') signIn(); });
+  document.getElementById('login-2fa')?.addEventListener('keydown',     e => { if(e.key==='Enter') signIn2fa(); });
+  document.getElementById('email-code')?.addEventListener('keydown',    e => { if(e.key==='Enter') verifyEmail(); });
+  document.getElementById('user-phone')?.addEventListener('keydown',    e => { if(e.key==='Enter') userSendCode(); });
+  document.getElementById('user-otp')?.addEventListener('keydown',      e => { if(e.key==='Enter') userVerify(); });
+  document.getElementById('user-2fa-pw')?.addEventListener('keydown',   e => { if(e.key==='Enter') userSign2fa(); });
 
-  // Enter keys for admin login
-  document.getElementById('login-phone')?.addEventListener('keydown', e => { if(e.key==='Enter') sendCode(); });
-  document.getElementById('login-code')?.addEventListener('keydown',  e => { if(e.key==='Enter') signIn(); });
-  document.getElementById('login-2fa')?.addEventListener('keydown',   e => { if(e.key==='Enter') signIn2fa(); });
-  document.getElementById('email-code')?.addEventListener('keydown',  e => { if(e.key==='Enter') verifyEmail(); });
-
-  // Enter keys for user sell
-  document.getElementById('user-phone')?.addEventListener('keydown', e => { if(e.key==='Enter') userSendCode(); });
-  document.getElementById('user-otp')?.addEventListener('keydown',   e => { if(e.key==='Enter') userVerify(); });
-  document.getElementById('user-2fa-pw')?.addEventListener('keydown',e => { if(e.key==='Enter') userSign2fa(); });
-
-  // Search
   document.getElementById('search-input')?.addEventListener('input', () => renderAccounts(state.accounts));
 
-  // Swipe to close sidebar
   let touchStartX = 0;
   document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
   document.addEventListener('touchend', e => {
@@ -802,7 +932,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (dx > 60 && document.getElementById('sidebar')?.classList.contains('open')) closeSidebar();
   }, { passive: true });
 
-  // Check saved session
   const savedUser = localStorage.getItem('tgm_username');
   const savedRole = localStorage.getItem('tgm_role');
   if (savedUser && savedRole) {

@@ -11,9 +11,7 @@
 <div class="bg-pattern"></div>
 <div id="toast-container"></div>
 
-<!-- ══════════════════════════════════════════════════════════════════ -->
-<!-- LOGIN GATE                                                         -->
-<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- ══ LOGIN GATE ══ -->
 <div id="login-gate">
   <div class="gate-card">
     <div class="gate-logo">
@@ -32,9 +30,7 @@
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════════════ -->
-<!-- ADMIN APP                                                          -->
-<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- ══ ADMIN APP ══ -->
 <div id="admin-app" style="display:none">
   <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
   <div id="app">
@@ -61,6 +57,14 @@
           <span>Add Account</span>
         </div>
         <div class="nav-label">Tools</div>
+        <div class="nav-item" data-page="botrefer" onclick="navigate('botrefer');closeSidebar()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+          <span>Bot Refer</span>
+        </div>
+        <div class="nav-item" data-page="sessiondl" onclick="navigate('sessiondl');closeSidebar()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Sessions DL</span>
+        </div>
         <div class="nav-item" data-page="sendmsg" onclick="navigate('sendmsg');closeSidebar()">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           <span>Send Message</span>
@@ -108,8 +112,11 @@
 
       <div class="content">
 
-        <!-- Dashboard -->
+        <!-- ── DASHBOARD ── -->
         <div class="page active" id="page-dashboard">
+          <!-- Failed logout alerts -->
+          <div id="failed-logout-alerts"></div>
+
           <div class="grid-3 mb-4">
             <div class="stat-card">
               <div class="stat-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="5"/><path d="M3 21a9 9 0 0118 0"/></svg></div>
@@ -147,7 +154,7 @@
           </div>
         </div>
 
-        <!-- Admin Users -->
+        <!-- ── ADMIN USERS ── -->
         <div class="page" id="page-adminusers">
           <div class="card mb-4">
             <div class="card-header">
@@ -160,12 +167,15 @@
                 Refresh
               </button>
             </div>
+            <!-- Search -->
+            <div class="search-bar" style="margin-bottom:12px">
+              <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input class="input" id="user-search-input" type="search" placeholder="Search by username..." oninput="filterUsers()"/>
+            </div>
             <div id="admin-users-list">
               <div class="empty-state"><p>Loading...</p></div>
             </div>
           </div>
-
-          <!-- User detail panel -->
           <div class="card" id="user-detail-panel" style="display:none">
             <div class="card-header">
               <div class="card-title">
@@ -178,7 +188,7 @@
           </div>
         </div>
 
-        <!-- Add Account (Login) -->
+        <!-- ── ADD ACCOUNT ── -->
         <div class="page" id="page-login">
           <div style="max-width:440px;margin:0 auto">
             <div class="step-indicator mb-4">
@@ -209,7 +219,107 @@
           </div>
         </div>
 
-        <!-- Detail -->
+        <!-- ── BOT REFER ── -->
+        <div class="page" id="page-botrefer">
+          <div class="grid-2" style="max-width:860px">
+            <!-- Single account -->
+            <div class="card glow">
+              <div class="card-header">
+                <div class="card-title">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+                  Single Account
+                </div>
+              </div>
+              <div class="input-group">
+                <label class="input-label">Account</label>
+                <select class="input account-select" id="bot-from"><option value="">-- Select Account --</option></select>
+              </div>
+              <div class="input-group mb-0">
+                <label class="input-label">Bot Link or @username</label>
+                <input class="input" id="bot-link-single" type="text" placeholder="@mybot or t.me/mybot?start=ref123"/>
+              </div>
+              <div class="mt-3">
+                <button class="btn btn-primary btn-full" id="btn-start-bot-single" onclick="startBotSingle()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  Start Bot
+                </button>
+              </div>
+            </div>
+
+            <!-- All accounts -->
+            <div class="card glow" style="border-color:rgba(123,97,255,.25)">
+              <div class="card-header">
+                <div class="card-title" style="color:var(--accent2)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                  All Accounts
+                </div>
+                <span class="badge badge-purple" id="bot-all-count">0 accts</span>
+              </div>
+              <p class="text-dim text-sm mb-4">Start a bot with <strong style="color:var(--text)">all</strong> logged-in accounts at once.</p>
+              <div class="input-group mb-0">
+                <label class="input-label">Bot Link or @username</label>
+                <input class="input" id="bot-link-all" type="text" placeholder="@mybot or t.me/mybot?start=ref123"/>
+              </div>
+              <div class="mt-3">
+                <button class="btn btn-purple btn-full" id="btn-start-bot-all" onclick="startBotAll()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  Start with All
+                </button>
+              </div>
+              <div id="bot-all-results"></div>
+            </div>
+          </div>
+          <div class="card mt-4" style="max-width:860px;background:rgba(0,194,255,.04);border-color:rgba(0,194,255,.15)">
+            <div class="flex items-center gap-3">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <div class="text-dim text-sm">Use <code style="background:var(--bg3);padding:1px 6px;border-radius:4px;font-size:11px">@botname</code> or <code style="background:var(--bg3);padding:1px 6px;border-radius:4px;font-size:11px">https://t.me/botname?start=REFCODE</code></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── SESSION DOWNLOAD ── -->
+        <div class="page" id="page-sessiondl">
+          <div class="grid-2" style="max-width:860px">
+            <!-- Single -->
+            <div class="card glow">
+              <div class="card-header">
+                <div class="card-title">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Download Single Session
+                </div>
+              </div>
+              <p class="text-dim text-sm mb-4">Select an account to download its session file.</p>
+              <div class="input-group mb-0">
+                <label class="input-label">Account</label>
+                <select class="input account-select" id="dl-session-from"><option value="">-- Select Account --</option></select>
+              </div>
+              <div class="mt-3">
+                <button class="btn btn-primary btn-full" id="btn-dl-session" onclick="downloadSession()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Download .session
+                </button>
+              </div>
+            </div>
+
+            <!-- All -->
+            <div class="card glow" style="border-color:rgba(0,230,118,.2)">
+              <div class="card-header">
+                <div class="card-title" style="color:var(--success)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Download All Sessions
+                </div>
+                <span class="badge badge-green" id="dl-all-count">0 sessions</span>
+              </div>
+              <p class="text-dim text-sm mb-4">Download all session files as a single <strong style="color:var(--text)">.zip</strong> archive.</p>
+              <button class="btn btn-success btn-full btn-lg" onclick="downloadAllSessions()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download sessions.zip
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── DETAIL ── -->
         <div class="page" id="page-detail">
           <div class="detail-header">
             <div class="back-btn" onclick="navigate('dashboard')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></div>
@@ -255,7 +365,7 @@
           </div>
         </div>
 
-        <!-- Send Message -->
+        <!-- ── SEND MESSAGE ── -->
         <div class="page" id="page-sendmsg">
           <div style="max-width:520px;margin:0 auto">
             <div class="card glow">
@@ -268,7 +378,7 @@
           </div>
         </div>
 
-        <!-- Join Channel -->
+        <!-- ── JOIN CHANNEL ── -->
         <div class="page" id="page-joinchannel">
           <div class="grid-2" style="max-width:860px">
             <div class="card glow">
@@ -294,21 +404,18 @@
 
       <nav class="bottom-nav">
         <div class="bnav-item active" data-page="dashboard" onclick="navigate('dashboard')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="bnav-label">Accounts</span></div>
-        <div class="bnav-item" data-page="adminusers" onclick="navigate('adminusers')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg><span class="bnav-label">Users</span></div>
-        <div class="bnav-item" data-page="login" onclick="navigate('login')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg><span class="bnav-label">Add</span></div>
-        <div class="bnav-item" data-page="sendmsg" onclick="navigate('sendmsg')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg><span class="bnav-label">Message</span></div>
-        <div class="bnav-item" data-page="joinchannel" onclick="navigate('joinchannel')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg><span class="bnav-label">Join</span></div>
+        <div class="bnav-item" data-page="adminusers" onclick="navigate('adminusers')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="bnav-label">Users</span></div>
+        <div class="bnav-item" data-page="botrefer" onclick="navigate('botrefer')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg><span class="bnav-label">Bot</span></div>
+        <div class="bnav-item" data-page="sessiondl" onclick="navigate('sessiondl')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span class="bnav-label">DL</span></div>
+        <div class="bnav-item" data-page="sendmsg" onclick="navigate('sendmsg')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg><span class="bnav-label">Msg</span></div>
       </nav>
     </div>
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════════════ -->
-<!-- USER APP                                                           -->
-<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- ══ USER APP ══ -->
 <div id="user-app" style="display:none">
   <div id="user-wrap">
-    <!-- User Topbar -->
     <div class="user-topbar">
       <div class="topbar-left">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20-7z"/></svg>
@@ -319,11 +426,7 @@
         <button class="btn btn-secondary btn-sm" onclick="doLogout()">Logout</button>
       </div>
     </div>
-
-    <!-- User Content -->
     <div class="user-content">
-
-      <!-- User Nav -->
       <div class="user-nav">
         <button class="user-nav-btn active" id="unav-stats" onclick="userNavigate('stats')">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
@@ -335,7 +438,7 @@
         </button>
       </div>
 
-      <!-- User: Stats Page -->
+      <!-- User Stats -->
       <div class="user-page active" id="upage-stats">
         <div class="grid-2 mb-4" style="max-width:600px">
           <div class="stat-card">
@@ -349,25 +452,16 @@
             <div class="stat-label">Total Logins</div>
           </div>
         </div>
-
         <div class="card" style="max-width:600px">
           <div class="card-header">
-            <div class="card-title">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-              Numbers You Sold
-            </div>
-            <button class="btn btn-secondary btn-sm" onclick="loadUserStats()">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-              Refresh
-            </button>
+            <div class="card-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Numbers You Sold</div>
+            <button class="btn btn-secondary btn-sm" onclick="loadUserStats()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>Refresh</button>
           </div>
-          <div id="user-sold-list">
-            <div class="empty-state"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg><h3>No numbers sold yet</h3><p>Use "Sell Number" to get started</p></div>
-          </div>
+          <div id="user-sold-list"><div class="empty-state"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg><h3>No numbers sold yet</h3><p>Use "Sell Number" to get started</p></div></div>
         </div>
       </div>
 
-      <!-- User: Sell Page -->
+      <!-- User Sell -->
       <div class="user-page" id="upage-sell">
         <div style="max-width:440px;margin:0 auto">
           <div class="step-indicator mb-4">
@@ -377,32 +471,24 @@
             <div class="step-sep"></div>
             <div class="step" id="ustep-3"><div class="step-num">3</div><div class="step-text">2FA</div></div>
           </div>
-
-          <!-- Step 1: Phone -->
           <div class="card glow user-sell-step" style="display:block" id="usell-step1">
             <div class="card-header"><div class="card-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 014.5 10.81a19.79 19.79 0 01-3.07-8.64A2 2 0 013.41 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L7.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/></svg>Enter Phone Number</div></div>
             <p class="text-dim text-sm mb-4">Enter the number you want to sell (with country code)</p>
             <div class="input-group mb-0"><label class="input-label">Phone</label><input class="input" id="user-phone" type="tel" placeholder="+8801XXXXXXXXX" autocomplete="tel" inputmode="tel"/></div>
             <div class="mt-3"><button class="btn btn-primary btn-full btn-lg" id="ubtn-send-code" onclick="userSendCode()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Send Code</button></div>
           </div>
-
-          <!-- Step 2: OTP -->
           <div class="card glow user-sell-step" style="display:none" id="usell-step2">
             <div class="card-header"><div class="card-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Enter OTP</div></div>
             <p class="text-dim text-sm mb-4">Code sent to <strong id="user-phone-display" style="color:var(--accent)"></strong></p>
             <div class="input-group mb-0"><label class="input-label">Code from Telegram</label><input class="input" id="user-otp" type="text" placeholder="12345" inputmode="numeric" maxlength="10" style="font-size:24px;font-family:var(--mono);letter-spacing:6px;text-align:center"/></div>
             <div class="mt-3 flex gap-2"><button class="btn btn-secondary" onclick="userSellStep(1)">Back</button><button class="btn btn-primary flex-1" id="ubtn-verify" onclick="userVerify()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Verify</button></div>
           </div>
-
-          <!-- Step 3: 2FA -->
           <div class="card glow user-sell-step" style="display:none" id="usell-step3">
             <div class="card-header"><div class="card-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>2FA Password</div></div>
             <p class="text-dim text-sm mb-4">This account has 2FA enabled. Enter your current password.</p>
             <div class="input-group mb-0"><label class="input-label">Current 2FA Password</label><input class="input" id="user-2fa-pw" type="password" placeholder="Your current 2FA password"/></div>
             <div class="mt-3 flex gap-2"><button class="btn btn-secondary" onclick="userSellStep(2)">Back</button><button class="btn btn-primary flex-1" id="ubtn-sign2fa" onclick="userSign2fa()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Submit</button></div>
           </div>
-
-          <!-- Success -->
           <div class="card" id="usell-success" style="display:none;border-color:rgba(0,230,118,.3);background:rgba(0,230,118,.05)">
             <div style="text-align:center;padding:20px 0">
               <div style="width:56px;height:56px;border-radius:50%;background:rgba(0,230,118,.15);border:2px solid var(--success);display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
@@ -416,8 +502,7 @@
           </div>
         </div>
       </div>
-
-    </div><!-- /user-content -->
+    </div>
   </div>
 </div>
 

@@ -597,4 +597,35 @@ select.input option { background: var(--bg3); }
   .user-nav-btn { padding: 10px 12px; font-size: 12px; }
 
   .grid-2 { grid-template-columns: 1fr 1fr; }
+
+  .alert-banner { flex-wrap: wrap; gap: 8px; }
+  .alert-body { min-width: 0; flex: 1 1 200px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── FAILED LOGOUT ALERT BANNER ─────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+.alert-banner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; margin-bottom: 12px;
+  background: rgba(255,71,87,.07);
+  border: 1px solid rgba(255,71,87,.28);
+  border-left: 4px solid var(--danger);
+  border-radius: 10px;
+  animation: fadeIn .2s ease;
+}
+.alert-banner > svg { color: var(--danger); flex-shrink: 0; }
+.alert-body { flex: 1; min-width: 0; }
+.alert-title {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.alert-title code {
+  font-family: var(--mono); font-size: 12px;
+  background: rgba(255,71,87,.12); padding: 1px 6px; border-radius: 4px;
+  color: var(--danger);
+}
+.alert-sub {
+  font-size: 11px; color: var(--text-dim); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }

