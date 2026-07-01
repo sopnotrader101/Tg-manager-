@@ -387,7 +387,7 @@ select.input option { background: var(--bg3); }
   .topbar-refresh-hide { display: none !important; }
 
   /* Content: scroll with padding for bottom nav */
-  .content { padding: 14px 13px 78px; }
+  .content { padding: 14px 13px 120px; }
 
   /* Bottom nav visible */
   .bottom-nav {
