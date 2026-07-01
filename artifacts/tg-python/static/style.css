@@ -596,8 +596,6 @@ select.input option { background: var(--bg3); }
 
   .user-nav-btn { padding: 10px 12px; font-size: 12px; }
 
-  .grid-2 { grid-template-columns: 1fr 1fr; }
-
   .alert-banner { flex-wrap: wrap; gap: 8px; }
   .alert-body { min-width: 0; flex: 1 1 200px; }
 }
@@ -629,3 +627,12 @@ select.input option { background: var(--bg3); }
   font-size: 11px; color: var(--text-dim); margin-top: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* ── More page section label ─────────────────────────────────────────────── */
+.more-section-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .7px; color: var(--text-mid);
+  margin-bottom: 10px; margin-top: 4px;
+}
+.more-section-label svg { color: var(--accent); flex-shrink: 0; }

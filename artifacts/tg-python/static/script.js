@@ -143,6 +143,7 @@ function navigate(page, data) {
     detail:      ['Account Detail', state.detail || ''],
     botrefer:    ['Bot Refer', 'Start a bot from any account'],
     sessiondl:   ['Sessions Download', 'Download session files'],
+    more:        ['More Tools', 'Send messages & join channels'],
     sendmsg:     ['Send Message', 'Send from any account'],
     joinchannel: ['Join Channel', 'Join with one or all accounts'],
   };
@@ -155,6 +156,7 @@ function navigate(page, data) {
   if (page === 'adminusers') loadAdminUsers();
   if (page === 'botrefer') { populateAccountSelects(); updateBotAllCount(); }
   if (page === 'sessiondl') { populateAccountSelects(); updateDlCount(); }
+  if (page === 'more') { populateAccountSelects(); updateMoreAllCount(); }
   if (page === 'sendmsg' || page === 'joinchannel') populateAccountSelects();
 
   const content = document.querySelector('#admin-app .content');
@@ -241,6 +243,11 @@ function updateBotAllCount() {
 function updateDlCount() {
   const el = document.getElementById('dl-all-count');
   if (el) el.textContent = state.accounts.length + ' sessions';
+}
+
+function updateMoreAllCount() {
+  const el = document.getElementById('more-all-count');
+  if (el) el.textContent = state.accounts.length + ' accts';
 }
 
 function updateStats() {
@@ -831,6 +838,65 @@ async function sendMessage() {
     await post(`/telegram/accounts/${encodeURIComponent(phone)}/send-message`, { username, message });
     toast('Message sent!', 'success');
     document.getElementById('msg-text').value = '';
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+  setLoading(btn, false);
+}
+
+/* ══════════ MORE PAGE FUNCTIONS ══════════ */
+async function sendMessageMore() {
+  const phone    = document.getElementById('more-msg-from').value;
+  const username = document.getElementById('more-msg-to').value.trim();
+  const message  = document.getElementById('more-msg-text').value.trim();
+  if (!phone)    return toast('Select an account', 'warn');
+  if (!username) return toast('Enter username or phone', 'warn');
+  if (!message)  return toast('Enter message text', 'warn');
+  const btn = document.getElementById('btn-more-send-msg');
+  setLoading(btn, true);
+  try {
+    await post(`/telegram/accounts/${encodeURIComponent(phone)}/send-message`, { username, message });
+    toast('Message sent!', 'success');
+    document.getElementById('more-msg-text').value = '';
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+  setLoading(btn, false);
+}
+
+async function joinChannelMore() {
+  const phone   = document.getElementById('more-join-from').value;
+  const channel = document.getElementById('more-join-channel').value.trim();
+  if (!phone)   return toast('Select an account', 'warn');
+  if (!channel) return toast('Enter channel username', 'warn');
+  const btn = document.getElementById('btn-more-join');
+  setLoading(btn, true);
+  try {
+    const r = await post(`/telegram/accounts/${encodeURIComponent(phone)}/join-channel`, { channel });
+    toast(r.message || 'Joined!', 'success');
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+  setLoading(btn, false);
+}
+
+async function joinAllMore() {
+  const channel = document.getElementById('more-join-all-channel').value.trim();
+  if (!channel)               return toast('Enter channel username', 'warn');
+  if (!state.accounts.length) return toast('No accounts logged in', 'warn');
+  const btn = document.getElementById('btn-more-join-all');
+  setLoading(btn, true);
+  try {
+    const r = await post('/telegram/join-all', { channel });
+    const el = document.getElementById('more-join-all-results');
+    const ok = r.results.filter(x => x.success).length;
+    el.innerHTML = `
+      <div style="margin-top:12px;font-size:11px;font-weight:600;color:var(--text-mid);margin-bottom:6px">
+        RESULTS — ${ok}/${r.results.length} joined
+      </div>
+      <div class="result-list">
+        ${r.results.map(x => `
+          <div class="result-item ${x.success?'ok':'fail'}">
+            <span style="color:${x.success?'var(--success)':'var(--danger)'};font-weight:800">${x.success?'✓':'✕'}</span>
+            <span style="font-family:var(--mono);font-size:11px">${esc(x.phone)}</span>
+            ${x.error ? `<span style="color:var(--text-dim);margin-left:auto;font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.error)}</span>` : ''}
+          </div>`).join('')}
+      </div>`;
+    toast(`${ok}/${r.results.length} joined`, ok === r.results.length ? 'success' : 'warn');
   } catch (e) { toast('Error: ' + e.message, 'error'); }
   setLoading(btn, false);
 }
